@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schadensmeldung - Mit Karte</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 0;
+            background: #f0f2f5;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .form-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .map-section {
+            background: white;
+            padding: 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        #map {
+            height: 600px;
+            width: 100%;
+            border-radius: 10px;
+        }
+        
+        h1 { 
+            color: #2c3e50; 
+            margin-bottom: 10px; 
+            grid-column: 1 / -1;
+        }
+        
+        h2 { 
+            color: #34495e; 
+            border-bottom: 2px solid #ecf0f1; 
+            padding-bottom: 10px; 
+            margin-top: 0;
+        }
+        
+        .form-group { margin-bottom: 20px; }
+        label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: 600; 
+            color: #2c3e50; 
+        }
+        
+        input, select, textarea { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #bdc3c7; 
+            border-radius: 6px; 
+            font-size: 16px; 
+        }
+        
+        input:focus, select:focus, textarea:focus { 
+            border-color: #3498db; 
+            outline: none; 
+        }
+        
+        button {
+            background: #3498db;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover { background: #2980b9; }
+        button.secondary { background: #95a5a6; }
+        button.secondary:hover { background: #7f8c8d; }
+        button.success { background: #27ae60; }
+        button.success:hover { background: #219a52; }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        
+        .damage-list { 
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .damage-item {
+            border: 1px solid #ddd;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .damage-item:hover {
+            border-color: #3498db;
+            transform: translateX(5px);
+        }
+        
+        .damage-item.active {
+            border-color: #e74c3c;
+            background: #ffeaa7;
+        }
+        
+        .api-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+            grid-column: 1 / -1;
+        }
+        
+        .coord-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .map-controls {
+            padding: 15px;
+            background: white;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        .schaden-marker {
+            background: #e74c3c;
+            border: 3px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        .schaden-marker.erledigt {
+            background: #27ae60;
+        }
+        
+        .schaden-marker.bearbeitung {
+            background: #f39c12;
+        }
+        
+        .leaflet-popup-content {
+            min-width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏗️ Schadensmeldung - Mit Live-Karte</h1>
+        
+        <div class="api-info">
+            <strong>🔑 API-Key:</strong> <code>test_key_12345</code> | 
+            <strong>📍 Base URL:</strong> <code>http://localhost:5000</code> |
+            <strong>🗺️ Karte:</strong> Zeigt alle gemeldeten Schäden in Echtzeit
+        </div>
+
+        <!-- Linke Spalte: Formular und Liste -->
+        <div class="form-section">
+            <!-- Health Check -->
+            <div class="form-group">
+                <button onclick="checkHealth()">🔍 API Status prüfen</button>
+                <div id="healthResult" class="result"></div>
+            </div>
+
+            <!-- Schaden melden Formular -->
+            <h2>📨 Neue Schadensmeldung</h2>
+            <form id="damageForm">
+                <div class="form-group">
+                    <label for="damage_type">Schadenstyp:</label>
+                    <select id="damage_type" required>
+                        <option value="">Bitte auswählen...</option>
+                        <option value="Schlagloch">🕳️ Schlagloch</option>
+                        <option value="Beschädigtes Schild">🚸 Beschädigtes Schild</option>
+                        <option value="Defekte Beleuchtung">💡 Defekte Beleuchtung</option>
+                        <option value="Kanalisationsschaden">🚰 Kanalisationsschaden</option>
+                        <option value="Vegetationsproblem">🌳 Vegetationsproblem</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Beschreibung:</label>
+                    <textarea id="description" rows="3" required placeholder="Beschreibe den Schaden..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Koordinaten:</label>
+                    <div class="coord-inputs">
+                        <div>
+                            <label for="latitude">Breitengrad:</label>
+                            <input type="number" id="latitude" step="any" value="47.3769" required>
+                        </div>
+                        <div>
+                            <label for="longitude">Längengrad:</label>
+                            <input type="number" id="longitude" step="any" value="8.5417" required>
+                        </div>
+                    </div>
+                    <small>💡 Tipp: Klicke auf die Karte um Koordinaten automatisch zu setzen!</small>
+                </div>
+
+                <button type="submit">📨 Schaden melden</button>
+                <button type="button" onclick="useCurrentLocation()" class="secondary">📍 Aktuellen Standort verwenden</button>
+            </form>
+
+            <div id="formResult" class="result"></div>
+
+            <!-- Gemeldete Schäden anzeigen -->
+            <div>
+                <h2>📋 Gemeldete Schäden</h2>
+                <div class="map-controls">
+                    <button onclick="loadDamages()">🔄 Schäden laden</button>
+                    <button onclick="clearDamages()" class="secondary">🗑️ Liste leeren</button>
+                    <button onclick="focusOnAllDamages()" class="success">🗺️ Auf Karte zeigen</button>
+                </div>
+                <div id="damagesList" class="damage-list"></div>
+            </div>
+        </div>
+
+        <!-- Rechte Spalte: Karte -->
+        <div class="map-section">
+            <h2 style="padding: 20px 20px 0 20px; margin: 0;">🗺️ Schadenskarte</h2>
+            <div style="padding: 0 20px; font-size: 14px; color: #666;">
+                Klicke auf die Marker für Details | Klicke auf die Karte um Koordinaten zu setzen
+            </div>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        const API_KEY = 'test_key_12345';
+        
+        // Karte initialisieren
+        let map = L.map('map').setView([47.3769, 8.5417], 13);
+        let damageMarkers = L.layerGroup().addTo(map);
+        let clickMarker = null;
+
+        // Basiskartenlayer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Karten-Click Event für Koordinaten
+        map.on('click', function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+            
+            // Koordinaten im Formular setzen
+            document.getElementById('latitude').value = lat.toFixed(6);
+            document.getElementById('longitude').value = lng.toFixed(6);
+            
+            // Temporären Marker setzen
+            if (clickMarker) {
+                map.removeLayer(clickMarker);
+            }
+            
+            clickMarker = L.marker([lat, lng])
+                .addTo(map)
+                .bindPopup('📍 Ausgewählte Position<br>Klicke "Schaden melden"')
+                .openPopup();
+                
+            // Marker nach 5 Sekunden entfernen
+            setTimeout(() => {
+                if (clickMarker) {
+                    map.removeLayer(clickMarker);
+                    clickMarker = null;
+                }
+            }, 5000);
+        });
+
+        // Aktuellen Standort verwenden
+        function useCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation wird von diesem Browser nicht unterstützt.');
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    document.getElementById('latitude').value = lat.toFixed(6);
+                    document.getElementById('longitude').value = lng.toFixed(6);
+                    
+                    // Karte zentrieren
+                    map.setView([lat, lng], 16);
+                    
+                    // Temporären Marker setzen
+                    if (clickMarker) {
+                        map.removeLayer(clickMarker);
+                    }
+                    
+                    clickMarker = L.marker([lat, lng])
+                        .addTo(map)
+                        .bindPopup('📍 Dein aktueller Standort')
+                        .openPopup();
+                },
+                function(error) {
+                    alert('Standort konnte nicht ermittelt werden: ' + error.message);
+                }
+            );
+        }
+
+        // Schadensdaten für Karte laden
+        async function loadMapData() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/damage/map-data`, {
+                    headers: {
+                        'X-API-Key': API_KEY
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // Alte Marker entfernen
+                damageMarkers.clearLayers();
+                
+                // Neue Marker hinzufügen
+                data.features.forEach(feature => {
+                    const coords = feature.geometry.coordinates;
+                    const props = feature.properties;
+                    
+                    // Farbe basierend auf Status
+                    let color = '#e74c3c'; // Standard: rot
+                    if (props.status === 'erledigt') color = '#27ae60'; // grün
+                    if (props.status === 'bearbeitung') color = '#f39c12'; // orange
+                    
+                    // Custom Icon erstellen
+                    const customIcon = L.divIcon({
+                        className: 'schaden-marker ' + props.status,
+                        html: '',
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    });
+                    
+                    const marker = L.marker([coords[1], coords[0]], { icon: customIcon })
+                        .bindPopup(`
+                            <div style="min-width: 200px;">
+                                <strong>Schaden #${props.id}</strong><br>
+                                <strong>Typ:</strong> ${props.schadentyp}<br>
+                                <strong>Status:</strong> ${props.status}<br>
+                                <strong>Beschreibung:</strong> ${props.beschreibung}<br>
+                                <strong>Gemeldet:</strong> ${new Date(props.erstellt).toLocaleString()}<br>
+                                <strong>Organisation:</strong> ${props.organisation}<br>
+                                <button onclick="focusOnDamage(${props.id})" style="margin-top: 10px; padding: 5px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer;">Auf Karte fokussieren</button>
+                            </div>
+                        `);
+                    
+                    damageMarkers.addLayer(marker);
+                });
+                
+                console.log(`✅ ${data.features.length} Schäden auf Karte geladen`);
+                
+            } catch (error) {
+                console.error('Fehler beim Laden der Kartendaten:', error);
+            }
+        }
+
+        // Auf bestimmten Schaden zoomen
+        function focusOnDamage(damageId) {
+            // In echter Implementierung würde man die Koordinaten aus den Daten holen
+            // Hier einfach auf Zürich zoomen als Beispiel
+            map.setView([47.3769, 8.5417], 15);
+        }
+
+        // Auf alle Schäden zoomen
+        function focusOnAllDamages() {
+            if (damageMarkers.getLayers().length > 0) {
+                const group = new L.featureGroup(damageMarkers.getLayers());
+                map.fitBounds(group.getBounds().pad(0.1));
+            } else {
+                alert('Keine Schäden zum Anzeigen vorhanden.');
+            }
+        }
+
+        // Health Check
+        async function checkHealth() {
+            try {
+                showLoading('healthResult', 'Prüfe API Status...');
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                const resultDiv = document.getElementById('healthResult');
+                resultDiv.innerHTML = `
+                    <strong>✅ API ist online!</strong><br>
+                    <strong>Status:</strong> ${data.status}<br>
+                    <strong>Version:</strong> ${data.version}<br>
+                    <strong>Zeit:</strong> ${new Date(data.timestamp).toLocaleString()}
+                `;
+                resultDiv.className = 'result success';
+                resultDiv.style.display = 'block';
+                
+                // Karten-Daten laden wenn API online
+                loadMapData();
+                
+            } catch (error) {
+                document.getElementById('healthResult').innerHTML = 
+                    `<strong>❌ API nicht erreichbar:</strong> ${error}`;
+                document.getElementById('healthResult').className = 'result error';
+                document.getElementById('healthResult').style.display = 'block';
+            }
+        }
+
+        // Schaden melden
+        document.getElementById('damageForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                damage_type: document.getElementById('damage_type').value,
+                description: document.getElementById('description').value,
+                latitude: parseFloat(document.getElementById('latitude').value),
+                longitude: parseFloat(document.getElementById('longitude').value),
+                additional_data: {}
+            };
+
+            try {
+                showLoading('formResult', 'Sende Schadensmeldung...');
+                const response = await fetch(`${API_BASE}/api/v1/damage/submit`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+                const resultDiv = document.getElementById('formResult');
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <strong>✅ Erfolg!</strong><br>
+                        <strong>Schaden-ID:</strong> ${result.damage_id}<br>
+                        <strong>Nachricht:</strong> ${result.message}<br>
+                        <strong>Erstellt:</strong> ${new Date(result.created_at).toLocaleString()}
+                    `;
+                    resultDiv.className = 'result success';
+                    
+                    // Formular zurücksetzen
+                    document.getElementById('damageForm').reset();
+                    document.getElementById('latitude').value = '47.3769';
+                    document.getElementById('longitude').value = '8.5417';
+                    
+                    // Daten und Karte aktualisieren
+                    setTimeout(() => {
+                        loadDamages();
+                        loadMapData();
+                    }, 1000);
+                } else {
+                    resultDiv.innerHTML = `
+                        <strong>❌ Fehler ${response.status}:</strong> ${result.error}<br>
+                        ${result.message}
+                    `;
+                    resultDiv.className = 'result error';
+                }
+                resultDiv.style.display = 'block';
+
+            } catch (error) {
+                document.getElementById('formResult').innerHTML = 
+                    `<strong>❌ Netzwerk-Fehler:</strong> ${error}`;
+                document.getElementById('formResult').className = 'result error';
+                document.getElementById('formResult').style.display = 'block';
+            }
+        });
+
+        // Schäden laden
+        async function loadDamages() {
+            try {
+                showLoading('damagesList', 'Lade Schäden...');
+                const response = await fetch(`${API_BASE}/api/v1/damage/list`, {
+                    headers: {
+                        'X-API-Key': API_KEY
+                    }
+                });
+                
+                const data = await response.json();
+                const listDiv = document.getElementById('damagesList');
+                
+                if (data.damages && data.damages.length > 0) {
+                    listDiv.innerHTML = `
+                        <p><strong>Gefunden: ${data.total} Schäden</strong></p>
+                        ${data.damages.map(damage => `
+                            <div class="damage-item" onclick="focusOnMap(${damage.latitude}, ${damage.longitude}, ${damage.id})">
+                                <strong>#${damage.id} - ${damage.schadentyp}</strong>
+                                <span style="background: #3498db; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 10px;">${damage.status}</span>
+                                <br>
+                                ${damage.beschreibung}<br>
+                                <small>📍 ${damage.latitude.toFixed(4)}, ${damage.longitude.toFixed(4)}</small><br>
+                                <small>📅 ${new Date(damage.erstellt).toLocaleString()}</small>
+                            </div>
+                        `).reverse().join('')}
+                    `;
+                } else {
+                    listDiv.innerHTML = '<div class="result info">📝 Noch keine Schäden gemeldet.</div>';
+                }
+            } catch (error) {
+                document.getElementById('damagesList').innerHTML = 
+                    `<div class="result error">❌ Fehler beim Laden: ${error}</div>`;
+            }
+        }
+
+        // Auf Karte fokussieren wenn Schaden angeklickt wird
+        function focusOnMap(lat, lng, damageId) {
+            map.setView([lat, lng], 16);
+            
+            // Alle Damage-Items deaktivieren
+            document.querySelectorAll('.damage-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Aktuelles Item aktivieren
+            event.currentTarget.classList.add('active');
+        }
+
+        // Schäden löschen (Mock)
+        function clearDamages() {
+            document.getElementById('damagesList').innerHTML = 
+                '<div class="result info">🗑️ Schadensliste geleert (Mock - Seite neu laden um echte Daten wieder zu sehen)</div>';
+        }
+
+        // Hilfsfunktionen
+        function showLoading(elementId, message) {
+            document.getElementById(elementId).innerHTML = 
+                `<div class="result info">⏳ ${message}</div>`;
+            document.getElementById(elementId).style.display = 'block';
+        }
+
+        // Automatisch beim Laden starten
+        window.onload = function() {
+            checkHealth();
+            loadDamages();
+        };
+    </script>
+</body>
+</html>
